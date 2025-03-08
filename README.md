@@ -1,0 +1,1 @@
+# Projeto_Embarcado---Lixeira_Inteligente
