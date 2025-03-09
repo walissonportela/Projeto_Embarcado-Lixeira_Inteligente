@@ -6,7 +6,7 @@
 // Nome: Joaquim Walisson Portela de Sousa
 // Matrícula: 472152
 //
-// Link do Repositório: 
+// Link do Repositório: https://github.com/walissonportela/Projeto_Embarcado-Lixeira_Inteligente.git
 // =====================================
 
 // ============================
@@ -36,10 +36,9 @@
 #define OLED_RESET    -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// 📌 Sensores e Atuadores
+// 📌 Sensores
 Adafruit_MPU6050 mpu;
 DHTesp dht;
-Servo servoMotor;
 Adafruit_BMP280 bmp(5);
 
 // 📌 Definição dos Pinos
