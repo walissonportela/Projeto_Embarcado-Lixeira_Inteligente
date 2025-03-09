@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2023 Luis Miguel Capacho Valbuena
 
+// Link do projeto baseado: https://wokwi.com/projects/394841903979791361
+
 #include "wokwi-api.h"
 #include <stdio.h>
 #include <stdlib.h>

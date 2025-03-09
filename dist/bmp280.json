@@ -1,5 +1,5 @@
 {
-  "name": "BMP280",
+  "name": "Temperature Scan",
   "author": "Luis Miguel Capacho Valbuena",
   "pins": [
     "VCC",

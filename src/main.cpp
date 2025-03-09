@@ -1,3 +1,17 @@
+// =====================================
+// Avaliação Final - Sistemas Embarcados
+//
+// Projeto: Lixeira Inteligente
+//
+// Nome: Joaquim Walisson Portela de Sousa
+// Matrícula: 472152
+//
+// Link do Repositório: 
+// =====================================
+
+// ============================
+// 📌 Bibliotecas Usadas
+// ============================
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -9,44 +23,40 @@
 #include "esp32-hal-ledc.h"
 #include <Adafruit_BMP280.h>
 #include <SPI.h>
-
-// FreeRTOS
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 
 // ============================
-// Definições de Hardware
+// 📌 Definições de Hardware
 // ============================
-
+// 📺 Display OLED
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET    -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// Sensores
+// 📌 Sensores e Atuadores
 Adafruit_MPU6050 mpu;
-DHTesp dht;  
+DHTesp dht;
 Servo servoMotor;
-Adafruit_BMP280 bmp(5);  
+Adafruit_BMP280 bmp(5);
 
-// Definição dos Pinos
-#define MQ2_PIN 35      
-#define POT_PIN 34      
-#define HC_SR04_TRIG 0  
-#define HC_SR04_ECHO 2  
-#define PIR_PIN 27      
-#define SERVO_PIN 4     
-#define BUZZER_PIN 16   
+// 📌 Definição dos Pinos
+#define MQ2_PIN 35       // Sensor de Gás
+#define POT_PIN 34       // Potenciômetro simulando peso
+#define HC_SR04_TRIG 0   // Sensor Ultrassônico - Trigger
+#define HC_SR04_ECHO 2   // Sensor Ultrassônico - Echo
+#define BUZZER_PIN 16    // Buzzer para alertas sonoros
+#define LED_RED 32       // LED de Alerta (Vermelho)
+#define LED_YELLOW 33    // LED de Atenção (Amarelo)
+#define LED_GREEN 25     // LED de Status Normal (Verde)
 
-// LEDs
-#define LED_RED 32
-#define LED_YELLOW 33
-#define LED_GREEN 25
+#define ALTURA_LIXEIRA 400  // Altura da lixeira em milímetros
 
-#define ALTURA_LIXEIRA 400  
-
-// Leituras
+// ==================================================
+// 📌 Estrutura para Armazenar Leituras dos Sensores
+// ==================================================
 typedef struct {
   float temperatureBMP = 0;
   float humidity = 0;
@@ -61,14 +71,34 @@ typedef struct {
 Sensores sensores;
 sensors_event_t accelerometerEvent;
 
-// Handlers do FreeRTOS
+// ============================
+// 📌 Controle de Sincronização
+// ============================
 SemaphoreHandle_t x_mutex = NULL;
-TaskHandle_t task_OLED, task_SENSORS, task_ALERTS;
 
 // ============================
-// Protótipos das Funções
+// 📌 Tasks dos Sensores
 // ============================
-void controlarTampa();
+void vTaskReadTemperature(void *pvParams);
+void vTaskReadHumidity(void *pvParams);
+void vTaskReadGas(void *pvParams);
+void vTaskReadWeight(void *pvParams);
+void vTaskReadCapacity(void *pvParams);
+void vTaskReadAccelerometer(void *pvParams);
+void vTaskUpdateOLED(void *pvParams);
+void vTaskAlarm(void *pvParams);
+
+// 📌 Handles das Tasks
+TaskHandle_t handleAlarm;
+TaskHandle_t handleUpdateOLED;
+TaskHandle_t handleReadTemperature;
+TaskHandle_t handleReadHumidity;
+TaskHandle_t handleReadGas;
+TaskHandle_t handleReadWeight;
+TaskHandle_t handleReadCapacity;
+TaskHandle_t handleReadAccelerometer;
+
+// 📌 Funções Auxiliares
 void controlarLedsPeso(float weight);
 void ligarLED(int ledPin);
 void desligarLED(int ledPin);
@@ -76,211 +106,364 @@ void triggerAlarm(String message);
 float readUltrasonic();
 float capacityPercent();
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max);
+void verificarProblema();
 
-void vTaskUpdateOLED(void *pvParams);
-void vTaskReadSensors(void *pvParams);
-void vTaskCheckAlerts(void *pvParams);
+bool mostrandoAlerta = false; 
+bool alarmTriggered = false;
+String alarmMessage = "";
 
 // ============================
-// 📌 Configuração Inicial (Setup)
+// 📌 Setup - Inicialização do Sistema
 // ============================
 void setup() {
   Serial.begin(115200);
-  delay(500); 
 
-  // Inicialização de sensores e atuadores
+  // Inicialização do barramento I2C e do Display OLED
   Wire.begin();
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
       Serial.println("⚠ Erro ao iniciar OLED");
       while (1);
   }
-  Serial.println("✅ OLED iniciado com sucesso");
+  Serial.println("✅ OLED iniciado");
 
+  // ==============================
+  // 📌 Tela Inicial
+  // ==============================
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(WHITE);
-  display.setCursor(0, 0);
-  display.print("Display OK!");
+  display.setCursor(20, 10);
+  display.print("Inicializando...");
   display.display();
-  delay(2000);
+  vTaskDelay(pdMS_TO_TICKS(1500));
 
-  // Configuração de pinos
+  // ==============================
+  // 📌 Configuração dos Sensores
+  // ==============================
   pinMode(MQ2_PIN, INPUT);
   pinMode(POT_PIN, INPUT);
   pinMode(HC_SR04_TRIG, OUTPUT);
   pinMode(HC_SR04_ECHO, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(PIR_PIN, INPUT);
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_YELLOW, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
 
-  // Inicialização de sensores
   mpu.begin();
   bmp.begin();
   dht.setup(14, DHTesp::DHT22);
-  servoMotor.attach(SERVO_PIN, 500, 2400);
-  servoMotor.write(90);
 
-  // Cria o mutex para gerenciar o acesso às variáveis globais
+  // Criar Mutex para sincronizar o OLED
   x_mutex = xSemaphoreCreateMutex();
 
-  // Criação das Tasks no FreeRTOS
+  // ==============================
+  // 📌 Criação das Tasks do FreeRTOS
+  // ==============================
   if (x_mutex != NULL) {    
-    xTaskCreatePinnedToCore(vTaskReadSensors, "task_sensors", 4096, NULL, 1, &task_SENSORS, 0);
-    xTaskCreatePinnedToCore(vTaskCheckAlerts, "task_alerts", 4096, NULL, 1, &task_ALERTS, 0);
-
-    xTaskCreatePinnedToCore(vTaskUpdateOLED, "task_oled", 4096, NULL, 1, &task_OLED, 1);
+      xTaskCreatePinnedToCore(vTaskAlarm, "AlarmTask", 2048, NULL, 2, &handleAlarm, 1);
+      xTaskCreatePinnedToCore(vTaskUpdateOLED, "UpdateOLED", 2048, NULL, 1, &handleUpdateOLED, 1);
+      xTaskCreatePinnedToCore(vTaskReadTemperature, "ReadTemp", 2048, NULL, 1, &handleReadTemperature, 0);
+      xTaskCreatePinnedToCore(vTaskReadHumidity, "ReadHum", 2048, NULL, 1, &handleReadHumidity, 0);
+      xTaskCreatePinnedToCore(vTaskReadGas, "ReadGas", 2048, NULL, 1, &handleReadGas, 0);
+      xTaskCreatePinnedToCore(vTaskReadWeight, "ReadWeight", 2048, NULL, 1, &handleReadWeight, 0);
+      xTaskCreatePinnedToCore(vTaskReadCapacity, "ReadCapacity", 2048, NULL, 1, &handleReadCapacity, 0);
+      xTaskCreatePinnedToCore(vTaskReadAccelerometer, "ReadAccel", 2048, NULL, 1, &handleReadAccelerometer, 0);
   }
+  
 }
 
-void loop(){}
+void loop() {}
 
 // ============================
-// 📌 Funções com FreeRTOS
+// 📌 TASKS - LEITURAS DOS SENSORES
 // ============================
 
-void vTaskReadSensors(void *pvParams) {
-  while (true) {
-    if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
-      sensores.temperatureBMP = bmp.readTemperature();
-      sensores.humidity = dht.getHumidity();
-      sensores.gasLevel = mapFloat(analogRead(MQ2_PIN), 843, 4041, 0, 50000);
-      sensores.weight = map(analogRead(POT_PIN), 0, 4095, 0, 1000);
-      sensores.capacity = capacityPercent();
-
-      mpu.getAccelerometerSensor()->getEvent(&accelerometerEvent);
-      sensores.accelerometerX = accelerometerEvent.acceleration.x;
-      sensores.accelerometerY = accelerometerEvent.acceleration.y;
-      sensores.accelerometerZ = accelerometerEvent.acceleration.z;
-
-      controlarTampa();
-      controlarLedsPeso(sensores.weight);
-
-      xSemaphoreGive(x_mutex);
-    }
-    vTaskDelay(pdMS_TO_TICKS(2000));
-  }
-}
-
+/**
+ * 📌 TASK: Atualiza o Display OLED.
+ */
 void vTaskUpdateOLED(void *pvParams) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  char buffer[20]; // Buffer para formatar os valores
+
   while (true) {
-    if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
       display.clearDisplay();
-      display.setCursor(0, 0);
-      display.print("Temp: "); display.print(sensores.temperatureBMP); display.print(" C");
-      display.setCursor(0, 15);
-      display.print("Umidade: "); display.print(sensores.humidity); display.print("%");
-      display.setCursor(0, 25);
-      display.print("Gases: "); display.print(sensores.gasLevel); display.print(" ppm");
-      display.setCursor(0, 35);
-      display.print("Peso: "); display.print(sensores.weight); display.print(" Kg");
-      display.display();
-      xSemaphoreGive(x_mutex);
-    }
-    vTaskDelay(pdMS_TO_TICKS(2000));
-  }
-}
+      display.setTextSize(1);
+      display.setTextColor(WHITE);
 
-void vTaskCheckAlerts(void *pvParams) {
-  while (true) {
-      if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
-          // Verifica se os valores são válidos antes de ativar o alarme
-          if (!isnan(sensores.accelerometerX) && !isnan(sensores.accelerometerY) && !isnan(sensores.accelerometerZ)) {
-              if (abs(sensores.accelerometerX) > 3 || abs(sensores.accelerometerY) > 3 || abs(sensores.accelerometerZ) > 3) {
-                  triggerAlarm("Lixeira caiu!");
-              }
+      if (mostrandoAlerta) {
+          // 🔴 Exibir alerta em vez das medições dos sensores
+          if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
+
+              display.setCursor(20, 10);
+              display.print("!!! ALERTA !!!");
+
+              display.setCursor(0, 30);
+              display.print(alarmMessage);  // Exibe a mensagem do alarme
+              display.display();
+              xSemaphoreGive(x_mutex);
           }
+      } else {
+          // 🌡️ Exibir as medições dos sensores normalmente
+          display.setCursor(0, 0);
+          display.print("Temperatura:");
+          sprintf(buffer, "%6.1f C", sensores.temperatureBMP);
+          display.print(buffer);
 
-          if (!isnan(sensores.weight) && sensores.weight > 900) {
-              triggerAlarm("Peso máximo atingido!");
-          }
+          display.setCursor(0, 12);
+          display.print("Umidade:");
+          sprintf(buffer, "%6.1f %%", sensores.humidity);
+          display.print(buffer);
 
-          if (!isnan(sensores.capacity) && sensores.capacity > 95.0) {
-              triggerAlarm("Lixeira cheia!");
-          }
+          display.setCursor(0, 24);
+          display.print("Gas:");
+          sprintf(buffer, "%6.0f ppm", sensores.gasLevel);
+          display.print(buffer);
 
-          if (!isnan(sensores.temperatureBMP) && sensores.temperatureBMP > 50.0) {
-              triggerAlarm("Perigo de incêndio!");
-          }
+          display.setCursor(0, 36);
+          display.print("Peso:");
+          sprintf(buffer, "%6.1f Kg", sensores.weight);
+          display.print(buffer);
 
-          if (!isnan(sensores.humidity) && sensores.humidity > 80.0) {
-              triggerAlarm("Perigo de infiltração!");
-          }
+          display.setCursor(0, 48);
+          display.print("Capacidade:");
+          sprintf(buffer, "%6.1f %%", sensores.capacity);
+          display.print(buffer);
 
-          xSemaphoreGive(x_mutex);
+          display.display();
       }
-      vTaskDelay(pdMS_TO_TICKS(2000));  // Delay para evitar sobrecarga da CPU
+
+      vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1500));  // Atualiza o OLED a cada 1.5s
   }
 }
 
+/**
+ * 📌 TASK: Lê a temperatura e ativa um alerta se estiver acima do limite.
+ */
+void vTaskReadTemperature(void *pvParams) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (1) {
+    sensores.temperatureBMP = mapFloat(bmp.readTemperature(), -123, 123, 0, 100);
+
+    if (sensores.temperatureBMP > 50.0) {
+      triggerAlarm("Perigo de incendio!");
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(2000));
+  }
+}
+
+/**
+ * 📌 TASK: Lê a umidade e verifica se há risco de infiltração.
+ */
+void vTaskReadHumidity(void *pvParams) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (1) {
+    sensores.humidity = dht.getHumidity();
+
+    if (sensores.humidity > 80.0) {
+      triggerAlarm("Risco de infiltracao!");
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(2000));
+  }
+}
+
+/**
+ * 📌 TASK: Lê o nível de gás e ativa alerta caso passe do limite.
+ */
+void vTaskReadGas(void *pvParams) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (1) {
+    sensores.gasLevel = mapFloat(analogRead(MQ2_PIN), 843, 4041, 0, 10000);
+
+    if (sensores.gasLevel > 5000) {
+      triggerAlarm("Nivel critico de gas!");
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1500));
+  }
+}
+
+/**
+ * 📌 TASK: Lê o peso da lixeira e controla os LEDs de status.
+ */
+void vTaskReadWeight(void *pvParams) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (1) {
+    sensores.weight = analogRead(POT_PIN);
+    controlarLedsPeso(sensores.weight);
+
+    if (sensores.weight > 3500) {
+
+      triggerAlarm("Peso maximo atingido!");
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1500));
+  }
+}
+
+/**
+ * 📌 TASK: Lê a capacidade da lixeira e ativa alerta se estiver cheia.
+ */
+void vTaskReadCapacity(void *pvParams) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (1) {
+    sensores.capacity = capacityPercent();
+
+    if (sensores.capacity > 95.0) {
+      triggerAlarm("Lixeira cheia!");
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1500));
+  }
+}
+
+/**
+ * 📌 TASK: Monitora aceleração para identificar quedas da lixeira.
+ */
+void vTaskReadAccelerometer(void *pvParams) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (1) {
+    mpu.getAccelerometerSensor()->getEvent(&accelerometerEvent);
+    sensores.accelerometerX = accelerometerEvent.acceleration.x;
+    sensores.accelerometerY = accelerometerEvent.acceleration.y;
+    sensores.accelerometerZ = accelerometerEvent.acceleration.z;
+
+    if (abs(sensores.accelerometerX) > 5.0 || 
+        abs(sensores.accelerometerY) > 5.0 || 
+        abs(sensores.accelerometerZ) > 5.0) {
+      triggerAlarm("Lixeira caiu!");
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+  }
+}
+
+/**
+ * 📌 TASK: Ativa oa alarme para os níveis críticos de cada sensor.
+ */
+void vTaskAlarm(void *pvParams) {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  while (1) {
+
+      if (alarmTriggered) {
+
+          Serial.println(alarmMessage);
+
+          // Desligar LEDS amarelo e verde
+          desligarLED(LED_YELLOW);
+          desligarLED(LED_GREEN);
+
+          // Ativa o LED vermelho e o buzzer
+          ligarLED(LED_RED);
+          tone(BUZZER_PIN, 500);
+          mostrandoAlerta = true;  
+
+          vTaskDelay(pdMS_TO_TICKS(300)); 
+
+          // Desliga o LED e o buzzer
+          desligarLED(LED_RED);
+          noTone(BUZZER_PIN);
+          mostrandoAlerta = false;  
+
+          vTaskDelay(pdMS_TO_TICKS(300));  
+
+          verificarProblema();  // Verifica se o problema ainda persiste
+
+      }
+
+      vTaskDelay(pdMS_TO_TICKS(100));  
+  }
+}
 
 // ============================
-// 📌 Funções Auxiliares
+// 📌 FUNÇÕES AUXILIARES 
 // ============================
 
-void ligarLED(int ledPin) { digitalWrite(ledPin, HIGH); }
-void desligarLED(int ledPin) { digitalWrite(ledPin, LOW); }
-
+/**
+ * 📌 Ativa o alarme e define a mensagem de alerta.
+ */
 void triggerAlarm(String message) {
-  Serial.println(message);
-  desligarLED(LED_YELLOW);
-  desligarLED(LED_GREEN);
-  for (int i = 0; i < 5; i++) {
-      ligarLED(LED_RED);
-      tone(BUZZER_PIN, 500);
-      vTaskDelay(pdMS_TO_TICKS(500));
-      desligarLED(LED_RED);
-      noTone(BUZZER_PIN);
-      vTaskDelay(pdMS_TO_TICKS(500));
-  }
+  alarmTriggered = true;
+  alarmMessage = message;
 }
 
+/**
+* 📌 Liga o LED indicado pelo pino.
+*/
+void ligarLED(int ledPin) {
+  digitalWrite(ledPin, HIGH);
+}
+
+/**
+* 📌 Desliga o LED indicado pelo pino.
+*/
+void desligarLED(int ledPin) {
+  digitalWrite(ledPin, LOW);
+}
+
+/**
+* 📌 Mede a distância usando o sensor ultrassônico.
+* 💡 Retorna a distância em centímetros.
+*/
 float readUltrasonic() {
   digitalWrite(HC_SR04_TRIG, LOW);
   delayMicroseconds(5);
   digitalWrite(HC_SR04_TRIG, HIGH);
   delayMicroseconds(10);
   digitalWrite(HC_SR04_TRIG, LOW);
+  
   return (pulseIn(HC_SR04_ECHO, HIGH, 30000) * 0.0343) / 2;
 }
 
-// Função para controlar a tampa da lixeira com o PIR
-void controlarTampa() {
-  if (digitalRead(PIR_PIN) == HIGH) {
-      Serial.println("Movimento detectado! Abrindo tampa...");
-      for (int cont = 90; cont >= 0; cont--) { 
-          delay(15);  
-      }
-      delay(3000); // Espera 3 segundos
-      Serial.println("Fechando tampa...");
-      for (int cont = 0; cont <= 90; cont++) {
-          servoMotor.write(cont);
-          delay(15);
-      }
-  }
-}
-
-// Função para ligar um LED e desligar os outros
+/**
+* 📌 Controla os LEDs da lixeira conforme o peso detectado.
+*/
 void controlarLedsPeso(float weight) {
+  // Desliga todos os LEDs antes de definir o status correto
   desligarLED(LED_RED);
   desligarLED(LED_YELLOW);
   desligarLED(LED_GREEN);
 
-  if (weight > 600) {
-      ligarLED(LED_RED);
-  } else if (weight > 300 && weight <= 600) {
-      ligarLED(LED_YELLOW);
-  } else if (weight >= 0 && weight < 300){
-      ligarLED(LED_GREEN);
+  // Define o LED apropriado com base no peso
+  if (weight > 3000) {
+      ligarLED(LED_RED);      // 🔴 Peso crítico
+  } else if (weight > 1500) {
+      ligarLED(LED_YELLOW);   // 🟡 Peso médio
+  } else {
+      ligarLED(LED_GREEN);    // 🟢 Peso leve
   }
 }
 
+/**
+* 📌 Calcula a porcentagem de capacidade da lixeira.
+* 💡 Baseado na altura da lixeira e na distância do ultrassônico.
+*/
 float capacityPercent() {
   return fmax(0.0, fmin(((ALTURA_LIXEIRA - readUltrasonic()) / ALTURA_LIXEIRA) * 100.0, 100.0));
 }
 
+/**
+* 📌 Mapeia um valor de um intervalo para outro.
+* 💡 Calibrar valores dos sensores.
+*/
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+/**
+* 📌 Verifica se as condições que acionaram o alarme ainda persistem.
+* 💡 Se todos os valores estiverem dentro dos limites aceitáveis, o alarme é desativado.
+*/
+void verificarProblema() {
+  if (sensores.temperatureBMP <= 50.0 &&
+      sensores.humidity <= 80.0 &&
+      sensores.gasLevel <= 5000 &&
+      sensores.weight <= 3500 &&
+      sensores.capacity <= 95.0 &&
+      abs(sensores.accelerometerX) <= 5.0 &&
+      abs(sensores.accelerometerY) <= 5.0 &&
+      abs(sensores.accelerometerZ) <= 5.0) {
+      alarmTriggered = false;  // 🔕 Desativa o alarme se todas as condições forem seguras.
+  }
+}
