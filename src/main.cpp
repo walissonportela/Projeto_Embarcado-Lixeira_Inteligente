@@ -125,9 +125,20 @@ void setup() {
   }
   Serial.println("✅ OLED iniciado");
 
+   // ==============================
+  // 📌 Tela Inicial 
   // ==============================
-  // 📌 Tela Inicial
-  // ==============================
+  display.clearDisplay();
+  display.setTextSize(1); 
+  display.setTextColor(WHITE);
+  display.setCursor((128 - (9 * 6)) / 2, 10); 
+  display.print("Bem-vindo a");
+  display.setCursor((128 - (7 * 6)) / 2, 30);
+  display.print("Lixeira");
+  display.setCursor((128 - (11 * 6)) / 2, 50);
+  display.print("Inteligente!");
+  display.display();
+  vTaskDelay(pdMS_TO_TICKS(2500));
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(WHITE);
