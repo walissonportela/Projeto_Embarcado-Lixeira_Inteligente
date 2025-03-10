@@ -26,7 +26,7 @@ O sistema monitora variáveis como **temperatura, umidade, nível de gás, peso 
   - **Potenciômetro (Analógico)** → Simulação de peso
 - **Atuadores:**
   - **Buzzer** → Alarme sonoro
-  - **Servo Motor** → Abertura da tampa
+  - **OLED** → Tela para apresentar as medições
   - **LEDs RGB** → Indicadores de status
 
 ## 🚀 Como Rodar o Projeto
