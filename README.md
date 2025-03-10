@@ -1,4 +1,4 @@
-# 📌 Lixeira Inteligente - Avaliação Final de Sistemas Embarcados
+# 📌 Lixeira Inteligente - Sistemas Embarcados
 
 ## 📌 Autor
 👤 **Joaquim Walisson Portela de Sousa**  
