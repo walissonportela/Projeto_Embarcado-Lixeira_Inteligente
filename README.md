@@ -34,10 +34,4 @@ O sistema monitora variáveis como **temperatura, umidade, nível de gás, peso 
 ```bash
 git clone https://github.com/seuusuario/lixeira-inteligente.git
 cd lixeira-inteligente
-```
-## 📌 Funcionalidades Implementadas
-✅ Leitura contínua dos sensores 📡  
-✅ Controle assíncrono com **FreeRTOS** ⏳  
-✅ Exibição de dados no **OLED** 📺  
-✅ Alarmes visuais e sonoros 🔔  
-✅ Simulação funcional no **Wokwi** 🎮  
+```  
