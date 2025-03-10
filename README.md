@@ -35,14 +35,6 @@ O sistema monitora variáveis como **temperatura, umidade, nível de gás, peso 
 git clone https://github.com/seuusuario/lixeira-inteligente.git
 cd lixeira-inteligente
 ```
-
-### 📌 2️⃣ Abrir no VSCode com PlatformIO
-1. **Baixe e instale o [VSCode]**
-2. **Instale a extensão [PlatformIO]**
-3. **Instale a extensão [Wokwi]**
-4. **Abra a pasta do projeto no PlataformIO**
-5. **Compile e rode o código!** ✅
-   
 ## 📌 Funcionalidades Implementadas
 ✅ Leitura contínua dos sensores 📡  
 ✅ Controle assíncrono com **FreeRTOS** ⏳  
