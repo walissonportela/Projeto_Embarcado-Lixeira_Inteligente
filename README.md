@@ -32,8 +32,8 @@ O sistema monitora variáveis como **temperatura, umidade, nível de gás, peso 
 ## 🚀 Como Rodar o Projeto
 ### 📌 1️⃣ Clonar o Repositório
 ```bash
-git clone https://github.com/seuusuario/lixeira-inteligente.git
-cd lixeira-inteligente
+git clone https://github.com/walissonportela/Projeto_Embarcado-Lixeira_Inteligente.git
+cd Projeto_Embarcado-Lixeira_Inteligente
 ```
 
 ### 📌 2️⃣ Abrir no VSCode com PlatformIO
